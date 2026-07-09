@@ -1,0 +1,199 @@
+{% comment %}
+  Snippet: search-filter-generic-facets
+  Version: Generic / Standalone
+  Author: John Venedick Natividad
+  GitHub: https://github.com/jaynatividad1489
+
+  Standalone filter facets — no Dawn dependencies.
+  Works inside sidebar, top bar, or drawer layouts.
+
+  Params:
+    collection {Collection} — Shopify collection object
+    section    {Section}    — Section object
+{% endcomment %}
+
+{%- if collection.filters != empty -%}
+  <form id="SfgFacetsForm" class="sfg__facets" data-section-id="{{ section.id }}">
+
+    {%- for filter in collection.filters -%}
+      <details
+        class="sfg__facet"
+        id="SfgFacet-{{ forloop.index }}"
+        {% if forloop.index <= 3 %}open{% endif %}
+      >
+        <summary class="sfg__facet-summary">
+          <span class="sfg__facet-label">
+            {{ filter.label }}
+            {%- if filter.active_values.size > 0 -%}
+              <span class="sfg__facet-active-count">({{ filter.active_values.size }})</span>
+            {%- endif -%}
+          </span>
+          <svg class="sfg__facet-caret" width="12" height="8" viewBox="0 0 12 8" fill="none">
+            <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </summary>
+
+        <div class="sfg__facet-body">
+
+          {%- if filter.type == 'boolean' or filter.type == 'list' -%}
+            {%- assign show_more_limit = 8 -%}
+            <ul class="sfg__facet-list" role="list">
+              {%- for value in filter.values -%}
+                {%- assign is_color = false -%}
+                {%- if filter.param_name contains 'color' or filter.param_name contains 'colour' -%}
+                  {%- assign is_color = true -%}
+                {%- endif -%}
+
+                {%- if forloop.index <= show_more_limit or value.active -%}
+                  <li class="sfg__facet-item">
+                    <label
+                      class="sfg__facet-option {% if value.count == 0 and value.active == false %}sfg__facet-option--disabled{% endif %}"
+                      for="SfgFilter-{{ filter.param_name }}-{{ forloop.index }}"
+                    >
+                      <input
+                        class="sfg__facet-checkbox"
+                        type="checkbox"
+                        name="{{ value.param_name }}"
+                        value="{{ value.value }}"
+                        id="SfgFilter-{{ filter.param_name }}-{{ forloop.index }}"
+                        {% if value.active %}checked{% endif %}
+                        {% if value.count == 0 and value.active == false %}disabled{% endif %}
+                      >
+                      {%- if is_color -%}
+                        <span
+                          class="sfg__color-swatch"
+                          style="background-color: {{ value.value | downcase | replace: ' ', '' }};"
+                          aria-hidden="true"
+                        ></span>
+                      {%- endif -%}
+                      <span class="sfg__facet-value">{{ value.label }}</span>
+                      <span class="sfg__facet-count">({{ value.count }})</span>
+                    </label>
+                  </li>
+                {%- elsif forloop.index == show_more_limit | plus: 1 -%}
+                  <li class="sfg__facet-item sfg__facet-show-more-item">
+                    <button
+                      class="sfg__show-more"
+                      type="button"
+                      aria-expanded="false"
+                      data-target="SfgMoreItems-{{ forloop.parentloop.index }}"
+                    >
+                      + {{ filter.values.size | minus: show_more_limit }} more
+                    </button>
+                    <ul
+                      class="sfg__facet-list sfg__hidden"
+                      id="SfgMoreItems-{{ forloop.parentloop.index }}"
+                      role="list"
+                    >
+                {%- endif -%}
+
+                {%- if forloop.index > show_more_limit -%}
+                  <li class="sfg__facet-item">
+                    <label
+                      class="sfg__facet-option {% if value.count == 0 and value.active == false %}sfg__facet-option--disabled{% endif %}"
+                      for="SfgFilter-{{ filter.param_name }}-{{ forloop.index }}"
+                    >
+                      <input
+                        class="sfg__facet-checkbox"
+                        type="checkbox"
+                        name="{{ value.param_name }}"
+                        value="{{ value.value }}"
+                        id="SfgFilter-{{ filter.param_name }}-{{ forloop.index }}"
+                        {% if value.active %}checked{% endif %}
+                        {% if value.count == 0 and value.active == false %}disabled{% endif %}
+                      >
+                      <span class="sfg__facet-value">{{ value.label }}</span>
+                      <span class="sfg__facet-count">({{ value.count }})</span>
+                    </label>
+                  </li>
+                  {%- if forloop.last -%}
+                    </ul>
+                    <button class="sfg__show-less sfg__hidden" type="button" data-target="SfgMoreItems-{{ forloop.parentloop.index }}">
+                      Show less
+                    </button>
+                  {%- endif -%}
+                {%- endif -%}
+
+              {%- endfor -%}
+            </ul>
+
+          {%- elsif filter.type == 'price_range' -%}
+            {%- assign price_min = filter.min_value.value | default: filter.range_min -%}
+            {%- assign price_max = filter.max_value.value | default: filter.range_max -%}
+
+            <div
+              class="sfg__price-range"
+              id="SfgPriceRange-{{ section.id }}"
+              data-min="{{ filter.range_min }}"
+              data-max="{{ filter.range_max }}"
+            >
+              <div class="sfg__price-slider">
+                <div class="sfg__price-track">
+                  <div class="sfg__price-fill" id="SfgPriceFill-{{ section.id }}"></div>
+                </div>
+                <input
+                  class="sfg__price-thumb sfg__price-thumb--min"
+                  type="range"
+                  name="{{ filter.min_value.param_name }}"
+                  id="SfgPriceMin-{{ section.id }}"
+                  min="{{ filter.range_min | divided_by: 100 }}"
+                  max="{{ filter.range_max | divided_by: 100 }}"
+                  value="{{ price_min | divided_by: 100 }}"
+                  step="1"
+                  aria-label="Minimum price"
+                >
+                <input
+                  class="sfg__price-thumb sfg__price-thumb--max"
+                  type="range"
+                  name="{{ filter.max_value.param_name }}"
+                  id="SfgPriceMax-{{ section.id }}"
+                  min="{{ filter.range_min | divided_by: 100 }}"
+                  max="{{ filter.range_max | divided_by: 100 }}"
+                  value="{{ price_max | divided_by: 100 }}"
+                  step="1"
+                  aria-label="Maximum price"
+                >
+              </div>
+
+              <div class="sfg__price-inputs">
+                <div class="sfg__price-input-wrap">
+                  <span class="sfg__price-symbol">{{ cart.currency.symbol }}</span>
+                  <input
+                    class="sfg__price-input"
+                    type="number"
+                    name="{{ filter.min_value.param_name }}"
+                    id="SfgPriceMinInput-{{ section.id }}"
+                    value="{{ price_min | divided_by: 100 | ceil }}"
+                    min="0"
+                    placeholder="{{ filter.range_min | divided_by: 100 | ceil }}"
+                    aria-label="Minimum price"
+                  >
+                </div>
+                <span class="sfg__price-sep" aria-hidden="true">–</span>
+                <div class="sfg__price-input-wrap">
+                  <span class="sfg__price-symbol">{{ cart.currency.symbol }}</span>
+                  <input
+                    class="sfg__price-input"
+                    type="number"
+                    name="{{ filter.max_value.param_name }}"
+                    id="SfgPriceMaxInput-{{ section.id }}"
+                    value="{{ price_max | divided_by: 100 | ceil }}"
+                    min="0"
+                    placeholder="{{ filter.range_max | divided_by: 100 | ceil }}"
+                    aria-label="Maximum price"
+                  >
+                </div>
+              </div>
+            </div>
+          {%- endif -%}
+
+        </div>
+      </details>
+    {%- endfor -%}
+
+    <noscript>
+      <button type="submit" class="sfg__btn sfg__btn--primary">Apply Filters</button>
+    </noscript>
+
+  </form>
+{%- endif -%}
