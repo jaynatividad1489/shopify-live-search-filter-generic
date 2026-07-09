@@ -216,7 +216,7 @@ window.addEventListener('popstate', (e) => {
 ## 👤 Author
 
 **John Venedick Natividad**
-Senior Shopify Developer & CRM Implementation Specialist
+Senior Shopify Developer & Implementation Specialist
 14+ years building eCommerce experiences for global brands
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=flat-square&logo=linkedin)](https://linkedin.com/in/jaynatividad)
