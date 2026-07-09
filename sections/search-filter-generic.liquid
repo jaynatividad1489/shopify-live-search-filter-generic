@@ -1,0 +1,452 @@
+{% comment %}
+  Section: Search & Filter
+  Version: Generic / Standalone (Non-Dawn)
+  Author: John Venedick Natividad
+  GitHub: https://github.com/jaynatividad1489
+
+  Works on ANY Shopify theme — zero Dawn dependencies.
+  All styles self-contained in search-filter-generic.css
+  All JS self-contained in search-filter-generic.js
+
+  Features:
+  - Live predictive search (Shopify Predictive Search API)
+  - AJAX collection filtering (no page reload)
+  - Multi-select checkbox facets
+  - Color swatch support
+  - Dual-handle price range slider
+  - Sort by dropdown
+  - Active filter tags with remove
+  - Clear all filters
+  - URL sync via pushState
+  - Product count updates live
+  - Loading skeleton states
+  - Mobile filter drawer
+  - Keyboard navigation (↑ ↓ Enter Escape)
+  - Recent searches (localStorage)
+  - Empty + error states
+  - Fully accessible (ARIA, keyboard, screen reader)
+{% endcomment %}
+
+{{ 'search-filter-generic.css' | asset_url | stylesheet_tag }}
+
+{%- assign products_per_page = section.settings.products_per_page | default: 16 -%}
+
+<div
+  id="SFG"
+  class="sfg"
+  data-section-id="{{ section.id }}"
+  data-free-shipping="{{ section.settings.free_shipping_threshold | times: 100 }}"
+>
+
+  {%- comment %} ── SEARCH BAR ── {%- endcomment %}
+  {%- if section.settings.show_search_bar -%}
+    <div class="sfg__search-wrap" id="SfgSearchWrap">
+      <div
+        class="sfg__search"
+        id="SfgSearch"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded="false"
+        aria-owns="SfgSearchResults"
+      >
+        <form
+          action="{{ routes.search_url }}"
+          method="get"
+          class="sfg__search-form"
+          role="search"
+          novalidate
+        >
+          <input type="hidden" name="type" value="product">
+          <input type="hidden" name="options[prefix]" value="last">
+
+          <div class="sfg__search-field">
+            <svg class="sfg__search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+
+            <input
+              type="search"
+              name="q"
+              id="SfgSearchInput"
+              class="sfg__search-input"
+              value="{{ search.terms | escape }}"
+              placeholder="{{ section.settings.search_placeholder | default: 'Search products...' | escape }}"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="{{ section.settings.search_placeholder | default: 'Search products' }}"
+              aria-autocomplete="list"
+              aria-controls="SfgSearchResults"
+              aria-activedescendant=""
+              role="combobox"
+            >
+
+            <button
+              type="button"
+              class="sfg__search-clear sfg__hidden"
+              id="SfgSearchClear"
+              aria-label="Clear search"
+            >
+              <svg width="14" height="14" viewBox="0 0 18 18" fill="none"><path d="M1 1l16 16M17 1L1 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+
+            <div class="sfg__search-spinner sfg__hidden" id="SfgSearchSpinner" aria-hidden="true">
+              <div class="sfg__spinner"><div></div><div></div><div></div><div></div></div>
+            </div>
+          </div>
+        </form>
+
+        <div
+          class="sfg__search-results"
+          id="SfgSearchResults"
+          role="listbox"
+          aria-label="Search results"
+          tabindex="-1"
+        ></div>
+
+        <p class="sfg__visually-hidden" id="SfgSearchAnnounce" aria-live="polite" aria-atomic="true"></p>
+      </div>
+    </div>
+  {%- endif -%}
+
+  {%- comment %} ── COLLECTION FILTER ── {%- endcomment %}
+  {%- if section.settings.show_collection_filter -%}
+    <div class="sfg__layout sfg__layout--{{ section.settings.filter_position }}" id="SfgLayout">
+
+      {%- comment %} Sidebar {%- endcomment %}
+      {%- if section.settings.filter_position == 'sidebar' -%}
+        <aside class="sfg__sidebar" id="SfgSidebar" aria-label="Filters">
+          <div class="sfg__sidebar-header">
+            <h3 class="sfg__sidebar-title">Filters</h3>
+            {%- assign active_filter_count = 0 -%}
+            {%- for filter in collection.filters -%}
+              {%- assign active_filter_count = active_filter_count | plus: filter.active_values.size -%}
+            {%- endfor -%}
+            {%- if active_filter_count > 0 -%}
+              <a href="{{ collection.url }}" class="sfg__clear-all" data-filter-url="{{ collection.url }}">
+                Clear all ({{ active_filter_count }})
+              </a>
+            {%- endif -%}
+          </div>
+          {%- render 'search-filter-generic-facets', collection: collection, section: section -%}
+        </aside>
+      {%- endif -%}
+
+      {%- comment %} Main {%- endcomment %}
+      <div class="sfg__main" id="SfgMain">
+
+        {%- comment %} Toolbar {%- endcomment %}
+        <div class="sfg__toolbar" id="SfgToolbar">
+
+          {%- comment %} Active Tags {%- endcomment %}
+          <div class="sfg__active-tags" id="SfgActiveTags" aria-live="polite">
+            {%- for filter in collection.filters -%}
+              {%- for value in filter.active_values -%}
+                <button
+                  class="sfg__tag"
+                  type="button"
+                  data-filter-url="{{ value.url_to_remove }}"
+                  aria-label="Remove filter: {{ value.label }}"
+                >
+                  {{ value.label }} <span aria-hidden="true">✕</span>
+                </button>
+              {%- endfor -%}
+              {%- if filter.type == 'price_range' -%}
+                {%- if filter.min_value.value != nil or filter.max_value.value != nil -%}
+                  <button
+                    class="sfg__tag"
+                    type="button"
+                    data-filter-url="{{ filter.url_to_remove }}"
+                  >
+                    {%- if filter.min_value.value -%}{{ filter.min_value.value | money }}{%- else -%}{{ filter.range_min | money }}{%- endif -%}
+                    –
+                    {%- if filter.max_value.value -%}{{ filter.max_value.value | money }}{%- else -%}{{ filter.range_max | money }}{%- endif -%}
+                    <span aria-hidden="true">✕</span>
+                  </button>
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+
+          <div class="sfg__toolbar-right">
+            <p class="sfg__count" id="SfgCount" aria-live="polite">
+              {{ collection.products_count }} products
+            </p>
+
+            {%- if section.settings.filter_position == 'drawer' -%}
+              <button
+                class="sfg__filter-toggle"
+                type="button"
+                id="SfgFilterToggle"
+                aria-controls="SfgDrawer"
+                aria-expanded="false"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+                Filter
+                {%- assign active_count = 0 -%}
+                {%- for filter in collection.filters -%}
+                  {%- assign active_count = active_count | plus: filter.active_values.size -%}
+                {%- endfor -%}
+                {%- if active_count > 0 -%}
+                  <span class="sfg__filter-badge">{{ active_count }}</span>
+                {%- endif -%}
+              </button>
+            {%- endif -%}
+
+            {%- if section.settings.show_sort -%}
+              <select
+                class="sfg__sort"
+                id="SfgSort"
+                aria-label="Sort products"
+              >
+                {%- assign sort_by = collection.sort_by | default: collection.default_sort_by -%}
+                {%- for option in collection.sort_options -%}
+                  <option value="{{ option.value }}" {% if option.value == sort_by %}selected{% endif %}>
+                    {{ option.name }}
+                  </option>
+                {%- endfor -%}
+              </select>
+            {%- endif -%}
+          </div>
+        </div>
+
+        {%- comment %} Top Facets {%- endcomment %}
+        {%- if section.settings.filter_position == 'top' -%}
+          <div class="sfg__top-facets">
+            {%- render 'search-filter-generic-facets', collection: collection, section: section -%}
+          </div>
+        {%- endif -%}
+
+        {%- comment %} Product Grid {%- endcomment %}
+        <div
+          class="sfg__grid"
+          id="SfgGrid"
+          aria-live="polite"
+          aria-busy="false"
+        >
+          {%- paginate collection.products by products_per_page -%}
+            {%- if collection.products.size > 0 -%}
+              <ul
+                class="sfg__products sfg__products--{{ section.settings.columns_desktop }}"
+                role="list"
+              >
+                {%- for product in collection.products -%}
+                  {%- assign on_sale = false -%}
+                  {%- if product.compare_at_price > product.price -%}
+                    {%- assign on_sale = true -%}
+                  {%- endif -%}
+                  <li class="sfg__product-item">
+                    <div class="sfg__card">
+                      <a
+                        href="{{ product.url }}"
+                        class="sfg__card-image-wrap"
+                        tabindex="-1"
+                        aria-hidden="true"
+                      >
+                        {%- if product.featured_media -%}
+                          {{
+                            product.featured_media
+                            | image_url: width: 533
+                            | image_tag:
+                              loading: 'lazy',
+                              class: 'sfg__card-image',
+                              widths: '165, 360, 533',
+                              sizes: '(min-width: 990px) 25vw, (min-width: 750px) 33vw, 50vw',
+                              alt: product.featured_media.alt | escape
+                          }}
+                          {%- if product.media[1] != nil -%}
+                            {{
+                              product.media[1]
+                              | image_url: width: 533
+                              | image_tag:
+                                loading: 'lazy',
+                                class: 'sfg__card-image sfg__card-image--hover',
+                                widths: '165, 360, 533',
+                                sizes: '(min-width: 990px) 25vw, (min-width: 750px) 33vw, 50vw',
+                                alt: product.media[1].alt | escape
+                            }}
+                          {%- endif -%}
+                        {%- else -%}
+                          {{ 'product-1' | placeholder_svg_tag: 'sfg__card-placeholder' }}
+                        {%- endif -%}
+
+                        <div class="sfg__card-badges">
+                          {%- if product.available == false -%}
+                            <span class="sfg__badge sfg__badge--sold-out">Sold Out</span>
+                          {%- elsif on_sale -%}
+                            <span class="sfg__badge sfg__badge--sale">Sale</span>
+                          {%- endif -%}
+                        </div>
+                      </a>
+
+                      <div class="sfg__card-info">
+                        {%- if section.settings.show_vendor and product.vendor != blank -%}
+                          <p class="sfg__card-vendor">{{ product.vendor | escape }}</p>
+                        {%- endif -%}
+                        <h3 class="sfg__card-title">
+                          <a href="{{ product.url }}">{{ product.title | escape }}</a>
+                        </h3>
+                        <div class="sfg__card-price">
+                          {%- if on_sale -%}
+                            <span class="sfg__price-sale">{{ product.price | money }}</span>
+                            <s class="sfg__price-compare">{{ product.compare_at_price | money }}</s>
+                          {%- else -%}
+                            <span class="sfg__price">{{ product.price | money }}</span>
+                          {%- endif -%}
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                {%- endfor -%}
+              </ul>
+
+              {%- if paginate.pages > 1 -%}
+                <div class="sfg__pagination" id="SfgPagination">
+                  {{- paginate | default_pagination: anchor: '' -}}
+                </div>
+              {%- endif -%}
+
+            {%- else -%}
+              <div class="sfg__empty" id="SfgEmpty">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <h3 class="sfg__empty-title">No products found</h3>
+                <p class="sfg__empty-text">Try adjusting your filters or search term.</p>
+                {%- if collection.filters.size > 0 -%}
+                  <a href="{{ collection.url }}" class="sfg__btn sfg__btn--primary" data-filter-url="{{ collection.url }}">
+                    Clear all filters
+                  </a>
+                {%- endif -%}
+              </div>
+            {%- endif -%}
+          {%- endpaginate -%}
+        </div>
+
+      </div>
+    </div>
+
+    {%- comment %} Mobile Drawer {%- endcomment %}
+    {%- if section.settings.filter_position == 'drawer' -%}
+      <div
+        id="SfgDrawer"
+        class="sfg__drawer"
+        aria-modal="true"
+        aria-label="Filters"
+        role="dialog"
+        aria-hidden="true"
+      >
+        <div class="sfg__drawer-overlay" id="SfgDrawerOverlay"></div>
+        <div class="sfg__drawer-panel" id="SfgDrawerPanel" tabindex="-1">
+          <div class="sfg__drawer-header">
+            <h2 class="sfg__drawer-title">Filters</h2>
+            <button
+              class="sfg__drawer-close"
+              type="button"
+              aria-label="Close filters"
+              aria-controls="SfgDrawer"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M1 1l16 16M17 1L1 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="sfg__drawer-body">
+            {%- render 'search-filter-generic-facets', collection: collection, section: section -%}
+          </div>
+          <div class="sfg__drawer-footer">
+            <button class="sfg__btn sfg__btn--primary sfg__btn--full" type="button" id="SfgDrawerApply">
+              View results <span id="SfgDrawerCount"></span>
+            </button>
+            <button class="sfg__btn sfg__btn--secondary sfg__btn--full" type="button" data-filter-url="{{ collection.url }}">
+              Clear all
+            </button>
+          </div>
+        </div>
+      </div>
+    {%- endif -%}
+
+  {%- endif -%}
+
+</div>
+
+<script src="{{ 'search-filter-generic.js' | asset_url }}" defer="defer"></script>
+
+{% schema %}
+{
+  "name": "Search & Filter (Generic)",
+  "tag": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Search Bar"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_search_bar",
+      "label": "Show Search Bar",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "search_placeholder",
+      "label": "Search Placeholder",
+      "default": "Search products..."
+    },
+    {
+      "type": "range",
+      "id": "search_results_limit",
+      "min": 3, "max": 10, "step": 1, "default": 6,
+      "label": "Max Search Results"
+    },
+    {
+      "type": "header",
+      "content": "Collection Filter"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_collection_filter",
+      "label": "Show Collection Filter",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "products_per_page",
+      "min": 8, "max": 48, "step": 4, "default": 16,
+      "label": "Products Per Page"
+    },
+    {
+      "type": "select",
+      "id": "columns_desktop",
+      "label": "Columns (Desktop)",
+      "options": [
+        { "value": "2", "label": "2 Columns" },
+        { "value": "3", "label": "3 Columns" },
+        { "value": "4", "label": "4 Columns" }
+      ],
+      "default": "3"
+    },
+    {
+      "type": "select",
+      "id": "filter_position",
+      "label": "Filter Position",
+      "options": [
+        { "value": "sidebar", "label": "Sidebar" },
+        { "value": "top",     "label": "Top (horizontal)" },
+        { "value": "drawer",  "label": "Drawer (mobile-first)" }
+      ],
+      "default": "sidebar"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_sort",
+      "label": "Show Sort Dropdown",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_vendor",
+      "label": "Show Product Vendor",
+      "default": false
+    }
+  ],
+  "presets": [
+    {
+      "name": "Search & Filter (Generic)"
+    }
+  ]
+}
+{% endschema %}
